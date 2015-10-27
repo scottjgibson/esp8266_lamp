@@ -4,8 +4,8 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 
-const int buttonPin = 2;           // number of the button pin
-const int ledPin = 0;              // number of the LED pin
+const int buttonPin = 0;           // number of the button pin
+const int ledPin = 2;              // number of the LED pin
 int buttonState = 0;               // button state starts at 0
 int brightness = 0;                // brightness of LED starts at 0
 int fadeAmount = 25.50;            // fadeAmount is equal to 10% of 255(max LED brightness)
@@ -13,6 +13,7 @@ int brighness = 0;            // fadeAmount is equal to 10% of 255(max LED brigh
 int buttonPressedCounter = 0;    // timer set to 0 whe depressing button
 int buttonCounter = 0;             // button counter set to 0
 int buttonLastState = 0;           // button last state set to 0
+
 
 
 MDNSResponder mdns;
@@ -59,6 +60,10 @@ void ICACHE_FLASH_ATTR handleNotFound()
 
 void ICACHE_FLASH_ATTR setup(void){
 	Serial.begin(9600);
+  // set button as input
+  pinMode(buttonPin, INPUT);
+  // set LED as output
+  pinMode(ledPin, OUTPUT);
 	WiFi.begin(ssid, password);
 	Serial.println("");
 	Serial.println("Wifi temperature sensor v0.1");
@@ -68,6 +73,10 @@ void ICACHE_FLASH_ATTR setup(void){
   {
 		delay(500);
 		Serial.print(".");
+    digitalWrite(ledPin, HIGH);
+		delay(500);
+		Serial.print(".");
+    digitalWrite(ledPin, LOW);
 	}
 
 	Serial.println("");
@@ -97,14 +106,9 @@ void ICACHE_FLASH_ATTR setup(void){
   });
 
 	server.onNotFound(handleNotFound);
-
 	server.begin();
 	ESP.wdtEnable(5000);
 
-  // set button as input
-  pinMode(buttonPin, INPUT);
-  // set LED as output
-  pinMode(ledPin, OUTPUT);
 }
 
 void ICACHE_FLASH_ATTR loop(void){
@@ -114,13 +118,11 @@ void ICACHE_FLASH_ATTR loop(void){
   buttonState = digitalRead(buttonPin);
   
   // activate when button is being held down
-  if (buttonState == HIGH)
+  if (buttonState == LOW)
   {
     buttonPressedCounter ++; // start counter
-    Serial.print("Pressed Timer: ");
-    Serial.println(buttonPressedCounter);
     // if counter equals 100 turn off LED and reset counter to 0
-    if (buttonPressedCounter == 50)
+    if (buttonPressedCounter == 50000)
     {
       buttonCounter = 0;
       analogWrite(ledPin, 0); // reset LED 
@@ -135,17 +137,19 @@ void ICACHE_FLASH_ATTR loop(void){
   // activate once to increase button counter, which adjusts the LED brightness
   if (buttonState != buttonLastState)
   {
-    if (buttonState == HIGH)
+    if (buttonState == LOW)
     {
       // increase counter only if less than 10
       if (buttonCounter < 10)
       {
         buttonCounter ++;
       }
+      Serial.print("Pressed Timer: ");
+      Serial.println(buttonPressedCounter);
       Serial.print("LED Level: ");
       Serial.println(buttonCounter);
       brightness = buttonCounter * fadeAmount;
-      analogWrite(ledPin, brightness); // adjust LED brightness to buttoncounter * fadeamount
+      analogWrite(ledPin, brightness*4); // adjust LED brightness to buttoncounter * fadeamount
     }   
     buttonLastState = buttonState;
   }
