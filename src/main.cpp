@@ -92,6 +92,11 @@ void loop()
       lastHoldLevel = brightness;
       if (myBtn.wasPressed())
       {
+        for (int i = brightness; i > 0; i--)
+        {
+          analogWrite(LED_PIN, gammaTbl[i]);
+          delay(3);
+        }
         STATE = OFF;
       }
       break;
