@@ -1,157 +1,104 @@
-#include "../config.h"
-#include <ESP8266WiFi.h>
-#include <WiFiClient.h>
+#include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
+#include <Button.h> 
+
+//needed for library
+#include <EEPROM.h>
 #include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>
+#include <DNSServer.h>
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 
-const int buttonPin = 0;           // number of the button pin
-const int ledPin = 2;              // number of the LED pin
-int buttonState = 0;               // button state starts at 0
-int brightness = 0;                // brightness of LED starts at 0
-int fadeAmount = 25.50;            // fadeAmount is equal to 10% of 255(max LED brightness)
-int brighness = 0;            // fadeAmount is equal to 10% of 255(max LED brightness)
-int buttonPressedCounter = 0;    // timer set to 0 whe depressing button
-int buttonCounter = 0;             // button counter set to 0
-int buttonLastState = 0;           // button last state set to 0
+#define BUTTON_PIN 0
+#define LED_PIN 2
+
+#define PULLUP true
+#define INVERT true
+#define DEBOUNCE_MS 150
+Button myBtn(BUTTON_PIN, PULLUP, INVERT, DEBOUNCE_MS);    //Declare the button
+
+enum {OFF, FADE_UP, HOLD, PULSE};       
+uint8_t STATE;                   //The current state machine state
+int brightness = 0;
+int lastHoldLevel = 0;
+
+void setup() {
+  Serial.begin(9600);
+  WiFiManager wifi;
+  wifi.autoConnect("Light");
+  brightness = 0;
+  STATE = OFF;
+  Serial.println("State: OFF");
+  pinMode(LED_PIN, OUTPUT);
+}
+
+#define FADE_UP_RATE 200
 
 
+const uint8_t gammaTbl[] = {
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  1,  1,  1,
+    1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  2,  2,  2,  2,  2,  2,
+    2,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  5,  5,  5,
+    5,  6,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9, 10,
+   10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 16, 16,
+   17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25,
+   25, 26, 27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36,
+   37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 50,
+   51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68,
+   69, 70, 72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89,
+   90, 92, 93, 95, 96, 98, 99,101,102,104,105,107,109,110,112,114,
+  115,117,119,120,122,124,126,127,129,131,133,135,137,138,140,142,
+  144,146,148,150,152,154,156,158,160,162,164,167,169,171,173,175,
+  177,180,182,184,186,189,191,193,196,198,200,203,205,208,210,213,
+  215,218,220,223,225,228,231,233,236,239,241,244,247,249,252,255 };
 
-MDNSResponder mdns;
-ESP8266WebServer server(80);
 
-
-String webString="";     // String to display
-// Generally, you should use "unsigned long" for variables that hold time
-unsigned long previousMillis = 0;        // will store last temp was read
-const long interval = 2000;             // interval at which to read sensor
-
-bool ICACHE_FLASH_ATTR gettemperature()
+void loop()
 {
-  // Wait at least 2 seconds seconds between measurements.
-  // if the difference between the current time and last time you read
-  // the sensor is bigger than the interval you set, read the sensor
-  // Works better than delay for things happening elsewhere also
-  unsigned long currentMillis = millis();
- 
-  if(currentMillis - previousMillis >= interval)
+  uint32_t timePressed;
+
+  myBtn.read();
+  analogWrite(LED_PIN, gammaTbl[brightness]);
+
+  switch (STATE)
   {
-    // save the last time you read the sensor 
-    previousMillis = currentMillis;
-	}
-}
-
-
-void ICACHE_FLASH_ATTR handleNotFound()
-{
-	String message = "File Not Found\n\n";
-	message += "URI: ";
-	message += server.uri();
-	message += "\nMethod: ";
-	message += (server.method() == HTTP_GET)?"GET":"POST";
-	message += "\nArguments: ";
-	message += server.args();
-	message += "\n";
-	for (uint8_t i=0; i<server.args(); i++)
-  {
-		message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-	}
-	server.send(404, "text/plain", message);
-}
-
-void ICACHE_FLASH_ATTR setup(void){
-	Serial.begin(9600);
-  // set button as input
-  pinMode(buttonPin, INPUT);
-  // set LED as output
-  pinMode(ledPin, OUTPUT);
-	WiFi.begin(ssid, password);
-	Serial.println("");
-	Serial.println("Wifi temperature sensor v0.1");
-
-	// Wait for connection
-	while (WiFi.status() != WL_CONNECTED)
-  {
-		delay(500);
-		Serial.print(".");
-    digitalWrite(ledPin, HIGH);
-		delay(500);
-		Serial.print(".");
-    digitalWrite(ledPin, LOW);
-	}
-
-	Serial.println("");
-	Serial.print("Connected to ");
-	Serial.println(ssid);
-	Serial.print("IP address: ");
-	Serial.println(WiFi.localIP());
-
-	if (mdns.begin(hostname, WiFi.localIP()))
-  {
-		Serial.println("MDNS responder started");
-	}
-
-	server.on("/", []()
-  {
-    if (gettemperature())
-    {       // read sensor
-      webString = String(hostname) + " reports:\n";
-      webString+="Brightness: "+String(0)+" \n";
-      server.send(200, "text/plain", webString);            // send to someones browser when asked
-    }
-    else 
-    {
-      webString="{\"error\": \"Cannot read data from sensor.\"";
-      server.send(503, "text/plain", webString);            // send to someones browser when asked
-    }
-  });
-
-	server.onNotFound(handleNotFound);
-	server.begin();
-	ESP.wdtEnable(5000);
-
-}
-
-void ICACHE_FLASH_ATTR loop(void){
-	server.handleClient();
-	ESP.wdtFeed();
-
-  buttonState = digitalRead(buttonPin);
-  
-  // activate when button is being held down
-  if (buttonState == LOW)
-  {
-    buttonPressedCounter ++; // start counter
-    // if counter equals 100 turn off LED and reset counter to 0
-    if (buttonPressedCounter == 50000)
-    {
-      buttonCounter = 0;
-      analogWrite(ledPin, 0); // reset LED 
-    }
-  } 
-  else 
-  {
-    // on button depress, set counter to 0
-    buttonPressedCounter = 0; 
-  }
-  
-  // activate once to increase button counter, which adjusts the LED brightness
-  if (buttonState != buttonLastState)
-  {
-    if (buttonState == LOW)
-    {
-      // increase counter only if less than 10
-      if (buttonCounter < 10)
+    case OFF:                
+      brightness = 0;
+      lastHoldLevel = 0;
+      if (myBtn.pressedFor(100))
       {
-        buttonCounter ++;
+        STATE = FADE_UP;
       }
-      Serial.print("Pressed Timer: ");
-      Serial.println(buttonPressedCounter);
-      Serial.print("LED Level: ");
-      Serial.println(buttonCounter);
-      brightness = buttonCounter * fadeAmount;
-      analogWrite(ledPin, brightness*4); // adjust LED brightness to buttoncounter * fadeamount
-    }   
-    buttonLastState = buttonState;
+      break;
+    case FADE_UP:                
+      if (myBtn.isPressed())
+      {
+        timePressed = millis() - myBtn.lastChange();
+        brightness = map(timePressed, 0, 3000, lastHoldLevel, 255);
+        brightness = constrain(brightness, 0, 255);
+        if (brightness == 255)
+        {
+          analogWrite(LED_PIN, gammaTbl[100]);
+          delay(100);
+          analogWrite(LED_PIN, gammaTbl[brightness]);
+          STATE = HOLD;
+        }
+      }
+      else if (myBtn.wasReleased())
+      {
+        STATE = HOLD;
+      }
+      break;
+    case HOLD:                
+      lastHoldLevel = brightness;
+      if (myBtn.wasPressed())
+      {
+        STATE = OFF;
+      }
+      break;
+    default:
+      STATE = OFF;
+      break;
+
   }
 }
 
